@@ -23,9 +23,13 @@ async function loadUsers() {
     document.querySelector("#user-list").innerHTML = result.users.map((user) => `<tr><td><strong>${user.User_ID}</strong></td><td>${user.Goal_Type}</td><td><span class="table-status">${user.Goal_Status}</span></td><td>${user.Preferred_Channel}</td><td><button class="table-select" data-user="${user.User_ID}">Review →</button></td></tr>`).join("");
     document.querySelectorAll(".table-select").forEach((button) => button.addEventListener("click", () => { select.value = button.dataset.user; showView("dashboard"); runButton.focus(); }));
     runButton.disabled = false;
+    text("#live-status", "Live Data Connected");
+    document.querySelector("#live-dot")?.classList.remove("connection-failed");
     setStatus("Select a customer to run the five-agent review.");
   } catch {
     select.innerHTML = "<option>Backend not connected</option>";
+    text("#live-status", "Live Data Unavailable");
+    document.querySelector("#live-dot")?.classList.add("connection-failed");
     setStatus("Backend not connected. Start the backend locally or open this page with ?api=YOUR_BACKEND_URL.", true);
   }
 }
@@ -48,6 +52,21 @@ function render(run) {
   const manager = run.manager_output;
   const message = run.marketer_output;
   const percent = Number.parseFloat(user["Goal_Progress_%"]) || 0;
+  const sheetSource = run.input.selected.source;
+  const formatStrategyType = strategy.strategy_type.replaceAll("_", " ");
+  const actionLabels = {
+    completed_goal_next_step: "Low-pressure goal progress check-in",
+    declining_engagement: "Low-pressure re-engagement check-in",
+    no_intervention: "No intervention recommended",
+    insufficient_evidence: "Gather more evidence before acting",
+  };
+  const communicationTitles = {
+    SEND: "Approved Communication",
+    DELAY: "Communication Preview - Held",
+    SUPPRESS: "No Communication Recommended",
+    "REVISION REQUIRED": "Draft Returned for Revision",
+    INSUFFICIENT_DATA: "No Communication - Insufficient Evidence",
+  };
   const observationDate = new Date(user.Observation_Date).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
   const lastActivity = user.Last_Activity_Date ? new Date(user.Last_Activity_Date).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "Not recorded";
   text("#header-date", observationDate);
@@ -58,10 +77,11 @@ function render(run) {
   text("#profile-channel", user.Preferred_Channel);
   text("#profile-activity", `${lastActivity} (${user.Days_Since_Last_Activity} days ago)`);
   text("#profile-nudge", user.Last_Nudge_Date || "Not recorded");
-  text("#trend-title", `${user.Logins_Last_7_Days} logins in 7 days`);
+  text("#trend-title", "Weekly history unavailable");
   text("#trend-caption", `${user.Logins_Last_30_Days} logins in 30 days versus a previous weekly average of ${user.Previous_Weekly_Login_Avg}. This is evidence of reduced activity, not a diagnosis of intent.`);
-  text("#engagement-pattern", strategy.strategy_type.replaceAll("_", " / "));
-  text("#recommended-action", strategy.overview);
+  text("#engagement-pattern", formatStrategyType);
+  text("#recommended-action", actionLabels[strategy.strategy_type] || formatStrategyType);
+  text("#recommendation-reason", strategy.why_this_follows_the_evidence?.[0] || research.summary);
   text("#recommended-channel", strategy.channel_guidance);
   text("#recommended-time", strategy.timing_guidance);
   text("#goal-name", user.Goal_Type);
@@ -70,17 +90,22 @@ function render(run) {
   text("#goal-currency", user.Goal_Currency);
   document.querySelector("#goal-progress").style.width = `${Math.min(percent, 100)}%`;
   text("#goal-status", user.Goal_Status);
-  text("#from-currency", user.Region_Currency);
-  text("#to-currency", user.Goal_Currency);
+  text("#sheets-status", "Connected");
+  text("#sheets-rows", sheetSource.rowsRetrieved);
+  text("#sheets-user", user.User_ID);
+  text("#sheets-refresh", new Date(sheetSource.fetchedAt).toLocaleString());
   text("#rate-value", currency.required ? `${currency.rate.base}/${currency.rate.quote} ${currency.rate.rate}` : "Not required");
   text("#rate-date", currency.required ? currency.rate.date : "Not required");
+  text("#frankfurter-status", currency.required ? "Connected" : "Not Required");
   text("#decision", manager.final_decision);
   text("#decision-rationale", manager.decision_rationale);
   text("#next-step", manager.required_next_step);
-  text("#message-channel", message.channel);
+  text("#communication-title", communicationTitles[manager.final_decision] || "Communication Preview");
+  text("#message-channel", manager.final_decision === "SEND" ? message.channel : `${message.channel} · held`);
   text("#message-headline", message.headline);
   text("#message-body", message.message);
-  text("#message-cta", message.cta);
+  text("#message-cta", manager.final_decision === "SEND" ? message.cta : "Preview only");
+  document.querySelector("#message-cta").disabled = manager.final_decision !== "SEND";
   text("#run-id", `Run ${run.run_id}`);
   text("#run-date", new Date(run.completed_at).toLocaleString());
   ["researcher", "designer", "maker", "marketer", "manager"].forEach((agent) => text(`#agent-${agent}`, "Completed"));

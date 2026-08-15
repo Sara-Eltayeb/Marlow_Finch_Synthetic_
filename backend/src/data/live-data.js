@@ -22,7 +22,7 @@ export async function fetchSelectedUser({ dataUrl, userId }) {
   if (!user) throw new Error(`Synthetic user not found: ${userId}`);
 
   return {
-    source: { type: "google-sheets-csv", url: dataUrl, fetchedAt: new Date().toISOString() },
+    source: { type: "google-sheets-csv", url: dataUrl, rowsRetrieved: rows.length, fetchedAt: new Date().toISOString() },
     user,
   };
 }
@@ -35,7 +35,7 @@ export async function fetchUsers({ dataUrl }) {
   if (missingColumns.length > 0) {
     throw new Error(`Google Sheets CSV is missing: ${missingColumns.join(", ")}`);
   }
-  return { source: { type: "google-sheets-csv", url: dataUrl, fetchedAt: new Date().toISOString() }, users: rows };
+  return { source: { type: "google-sheets-csv", url: dataUrl, rowsRetrieved: rows.length, fetchedAt: new Date().toISOString() }, users: rows };
 }
 
 export async function fetchRelevantCurrency({ user, rateUrl }) {
