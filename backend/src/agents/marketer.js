@@ -26,6 +26,8 @@ Return only valid JSON matching this shape:
   "draft_status": "draft_only"
 }
 
+The cta value must always be one plain string. If the Intervention Plan is blocked, use exactly: "No action until approved".
+
 Use plain language. Celebrate verified progress without assuming what the customer feels or what they should do next.`;
 
 export async function runMarketer({ interventionPlan, researchBrief, geminiApiKey, model = "gemini-3.5-flash-lite" }) {
@@ -39,6 +41,10 @@ export async function runMarketer({ interventionPlan, researchBrief, geminiApiKe
     geminiApiKey,
     model,
   });
+  if (typeof communication.cta !== "string") {
+    if (interventionPlan.implementation_status === "blocked") communication.cta = "No action until approved";
+    else if (Array.isArray(communication.cta) && communication.cta.every((item) => typeof item === "string")) communication.cta = communication.cta.join(" / ");
+  }
   validateCommunication(communication);
   return communication;
 }
