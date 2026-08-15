@@ -1,4 +1,4 @@
-const apiBase = new URLSearchParams(location.search).get("api") || window.MARLOW_FINCH_API || "http://localhost:8787";
+const apiBase = new URLSearchParams(location.search).get("api") || window.MARLOW_FINCH_API || "https://marlow-finch-synthetic.onrender.com";
 const select = document.querySelector("#user-select");
 const runButton = document.querySelector("#run-button");
 const status = document.querySelector("#status");
