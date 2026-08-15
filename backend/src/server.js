@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
-import { fetchRelevantCurrency, fetchSelectedUser, fetchUsers } from "./data/live-data.js";
+import { fetchRelevantCurrency, fetchSelectedUser, fetchUsers, fetchWeeklyActivity } from "./data/live-data.js";
 import { runResearcher } from "./agents/researcher.js";
 import { runDesigner } from "./agents/designer.js";
 import { runMaker } from "./agents/maker.js";
@@ -11,6 +11,8 @@ import { runManager } from "./agents/manager.js";
 const dataUrl = process.env.GOOGLE_SHEETS_USER_DATA_URL
   ?? "https://docs.google.com/spreadsheets/d/e/2PACX-1vTOWK-CxODEnX356-osN_6SXoM0xbaIxengfFut5QPE8Kx9d81VKGcWsErHGJkqSaIp4_0nNcdD3-GI/pub?output=csv";
 const rateUrl = process.env.FRANKFURTER_RATE_URL ?? "https://api.frankfurter.dev/v2/rate/EUR/USD";
+const weeklyDataUrl = process.env.WEEKLY_ACTIVITY_DATA_URL
+  ?? "https://docs.google.com/spreadsheets/d/e/2PACX-1vTOWK-CxODEnX356-osN_6SXoM0xbaIxengfFut5QPE8Kx9d81VKGcWsErHGJkqSaIp4_0nNcdD3-GI/pub?gid=137332701&single=true&output=csv";
 const model = process.env.GEMINI_MODEL ?? "gemini-3.5-flash-lite";
 const port = Number(process.env.PORT ?? 8787);
 const origin = process.env.FRONTEND_ORIGIN ?? "*";
@@ -29,7 +31,13 @@ async function runWorkflow(userId) {
   const runId = randomUUID();
   const selected = await fetchSelectedUser({ dataUrl, userId });
   const currency = await fetchRelevantCurrency({ user: selected.user, rateUrl });
-  const researchBrief = await runResearcher({ user: selected.user, currency, geminiApiKey: process.env.GEMINI_API_KEY, model });
+  let weeklyActivity;
+  try {
+    weeklyActivity = await fetchWeeklyActivity({ weeklyDataUrl, userId });
+  } catch (error) {
+    weeklyActivity = { available: false, error: error.message, selectedUserId: userId, rows: [] };
+  }
+  const researchBrief = await runResearcher({ user: selected.user, currency, weeklyActivity, geminiApiKey: process.env.GEMINI_API_KEY, model });
   const strategy = await runDesigner({ researchBrief, geminiApiKey: process.env.GEMINI_API_KEY, model });
   const interventionPlan = await runMaker({ researchBrief, strategy, geminiApiKey: process.env.GEMINI_API_KEY, model });
   const communication = await runMarketer({ interventionPlan, researchBrief, geminiApiKey: process.env.GEMINI_API_KEY, model });
@@ -38,6 +46,7 @@ async function runWorkflow(userId) {
     run_id: runId,
     selected_user_id: userId,
     input: { selected, currency },
+    weekly_activity: weeklyActivity,
     researcher_output: researchBrief,
     designer_output: strategy,
     maker_output: interventionPlan,
@@ -58,6 +67,15 @@ const server = createServer(async (request, response) => {
     if (request.method === "GET" && url.pathname === "/api/users") {
       const result = await fetchUsers({ dataUrl });
       return send(response, 200, { source: result.source, users: result.users.map(({ User_ID, Goal_Type, Goal_Status, Preferred_Channel }) => ({ User_ID, Goal_Type, Goal_Status, Preferred_Channel })) });
+    }
+    if (request.method === "GET" && url.pathname === "/api/weekly") {
+      const userId = url.searchParams.get("userId");
+      if (!userId) return send(response, 400, { error: "userId is required" });
+      try {
+        return send(response, 200, await fetchWeeklyActivity({ weeklyDataUrl, userId }));
+      } catch (error) {
+        return send(response, 200, { available: false, error: error.message, selectedUserId: userId, rows: [] });
+      }
     }
     if (request.method === "POST" && url.pathname === "/api/run") {
       const chunks = [];

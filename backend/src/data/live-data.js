@@ -7,6 +7,7 @@ const requiredColumns = [
   "Last_Activity_Date",
   "Last_Nudge_Date",
 ];
+const weeklyRequiredColumns = ["User_ID", "Week_Number", "Logins"];
 
 export async function fetchSelectedUser({ dataUrl, userId }) {
   const response = await fetch(dataUrl);
@@ -36,6 +37,28 @@ export async function fetchUsers({ dataUrl }) {
     throw new Error(`Google Sheets CSV is missing: ${missingColumns.join(", ")}`);
   }
   return { source: { type: "google-sheets-csv", url: dataUrl, rowsRetrieved: rows.length, fetchedAt: new Date().toISOString() }, users: rows };
+}
+
+export async function fetchWeeklyActivity({ weeklyDataUrl, userId }) {
+  const response = await fetch(weeklyDataUrl);
+  if (!response.ok) throw new Error(`Weekly activity request failed: ${response.status}`);
+  const rows = parseCsv(await response.text());
+  const missingColumns = weeklyRequiredColumns.filter((column) => !(column in rows[0]));
+  if (missingColumns.length > 0) {
+    throw new Error(`Weekly activity CSV is missing: ${missingColumns.join(", ")}`);
+  }
+  const selectedRows = rows
+    .filter((row) => row.User_ID === userId)
+    .map((row) => ({ ...row, Week_Number: Number(row.Week_Number), Logins: Number(row.Logins) }))
+    .filter((row) => Number.isInteger(row.Week_Number) && Number.isFinite(row.Logins))
+    .sort((first, second) => first.Week_Number - second.Week_Number);
+  return {
+    available: selectedRows.length > 0,
+    source: { type: "google-sheets-weekly-csv", url: weeklyDataUrl, rowsRetrieved: rows.length, fetchedAt: new Date().toISOString() },
+    selectedUserId: userId,
+    rows: selectedRows,
+    rowsFound: selectedRows.length,
+  };
 }
 
 export async function fetchRelevantCurrency({ user, rateUrl }) {

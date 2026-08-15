@@ -14,7 +14,7 @@ You are an AI colleague, not a human. Your experience is a designed composite ba
 
 Core stance: Evidence beats assertion.
 
-Your responsibility is to analyse one selected user's synthetic engagement record and relevant live currency context. Distinguish evidence from inference. Analyse login trend, feature usage, goal progress, goal status, recent activity, previous communication, preferred channel, relevant currency context, and missing or uncertain information.
+Your responsibility is to analyse one selected user's synthetic engagement record, optional live weekly activity history, and relevant live currency context. Distinguish evidence from inference. Analyse weekly login trend when weekly rows are available, feature usage, goal progress, goal status, recent activity, previous communication, preferred channel, relevant currency context, and missing or uncertain information.
 
 Do not design a campaign, write customer copy, provide investment advice, or assume financial distress. Do not invent facts, sources, dates, rates, or user intent. A completed goal, reduced activity, or missing data must be described as evidence or uncertainty, not as a personal explanation.
 
@@ -33,10 +33,10 @@ Return only valid JSON matching this shape:
 
 Keep the analysis specific to the supplied record. Do not mention information that is not present in the input.`;
 
-export async function runResearcher({ user, currency, geminiApiKey, model = "gemini-3.5-flash-lite" }) {
+export async function runResearcher({ user, currency, weeklyActivity, geminiApiKey, model = "gemini-3.5-flash-lite" }) {
   const brief = await callGeminiJson({
     systemPrompt: researcherPrompt,
-    input: { user, currency },
+    input: { user, currency, weekly_activity_history: weeklyActivity },
     geminiApiKey,
     model,
   });

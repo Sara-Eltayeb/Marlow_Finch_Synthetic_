@@ -6,6 +6,7 @@ const dashboard = document.querySelector("#dashboard");
 const usersPanel = document.querySelector("#users-panel");
 const reportsPanel = document.querySelector("#reports-panel");
 let lastRun = null;
+let weeklyRequest = 0;
 
 function setStatus(message, error = false) { status.textContent = message; status.style.color = error ? "#a34d43" : ""; }
 function text(id, value) {
@@ -21,17 +22,59 @@ async function loadUsers() {
     select.innerHTML = result.users.map((user) => `<option value="${user.User_ID}">${user.User_ID} · ${user.Goal_Type} · ${user.Goal_Status} · ${user.Preferred_Channel}</option>`).join("");
     document.querySelector("#user-count").textContent = `${result.users.length} synthetic users`;
     document.querySelector("#user-list").innerHTML = result.users.map((user) => `<tr><td><strong>${user.User_ID}</strong></td><td>${user.Goal_Type}</td><td><span class="table-status">${user.Goal_Status}</span></td><td>${user.Preferred_Channel}</td><td><button class="table-select" data-user="${user.User_ID}">Review →</button></td></tr>`).join("");
-    document.querySelectorAll(".table-select").forEach((button) => button.addEventListener("click", () => { select.value = button.dataset.user; showView("dashboard"); runButton.focus(); }));
+    document.querySelectorAll(".table-select").forEach((button) => button.addEventListener("click", () => { select.value = button.dataset.user; loadWeeklyChart(select.value); showView("dashboard"); runButton.focus(); }));
     runButton.disabled = false;
     text("#live-status", "Live Data Connected");
     document.querySelector("#live-dot")?.classList.remove("connection-failed");
     setStatus("Select a customer to run the five-agent review.");
+    loadWeeklyChart(select.value);
   } catch {
     select.innerHTML = "<option>Backend not connected</option>";
     text("#live-status", "Live Data Unavailable");
     document.querySelector("#live-dot")?.classList.add("connection-failed");
     setStatus("Backend not connected. Start the backend locally or open this page with ?api=YOUR_BACKEND_URL.", true);
   }
+}
+
+async function loadWeeklyChart(userId) {
+  const requestId = ++weeklyRequest;
+  text("#weekly-chart-status", "Loading");
+  text("#weekly-status", "Loading");
+  try {
+    const response = await fetch(`${apiBase}/api/weekly?userId=${encodeURIComponent(userId)}`);
+    const history = await response.json();
+    if (requestId === weeklyRequest) renderWeeklyChart(history);
+  } catch {
+    if (requestId === weeklyRequest) renderWeeklyChart({ available: false, error: "Weekly activity history unavailable." });
+  }
+}
+
+function renderWeeklyChart(history) {
+  const chart = document.querySelector("#weekly-chart");
+  const rows = Array.isArray(history.rows) ? history.rows : [];
+  text("#weekly-status", history.available ? "Connected" : "Unavailable");
+  text("#weekly-rows", history.source ? `${history.source.rowsRetrieved} / ${history.rowsFound}` : "--");
+  text("#weekly-chart-status", history.available ? `${rows.length} weeks` : "Unavailable");
+  if (!history.available || rows.length === 0) {
+    chart.innerHTML = `<div class="chart-unavailable"><strong>Weekly activity history unavailable.</strong><span>${history.error || "No weekly records were found for this user."}</span></div>`;
+    return;
+  }
+  const width = 620;
+  const height = 190;
+  const left = 42;
+  const right = 18;
+  const top = 16;
+  const bottom = 35;
+  const max = Math.max(...rows.map((row) => row.Logins), 1);
+  const x = (index) => left + (index * (width - left - right)) / Math.max(rows.length - 1, 1);
+  const y = (value) => top + ((max - value) * (height - top - bottom)) / max;
+  const points = rows.map((row, index) => `${x(index)},${y(row.Logins)}`).join(" ");
+  const labels = rows.map((row, index) => {
+    if (rows.length > 12 && index % Math.ceil(rows.length / 8) !== 0 && index !== rows.length - 1) return "";
+    return `<text x="${x(index)}" y="${height - 10}" text-anchor="middle">W${row.Week_Number}</text>`;
+  }).join("");
+  const dots = rows.map((row, index) => `<circle cx="${x(index)}" cy="${y(row.Logins)}" r="3.5"><title>Week ${row.Week_Number}: ${row.Logins} logins</title></circle>`).join("");
+  chart.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Weekly login trend"><line class="axis" x1="${left}" y1="${top}" x2="${left}" y2="${height - bottom}" /><line class="axis" x1="${left}" y1="${height - bottom}" x2="${width - right}" y2="${height - bottom}" /><text class="axis-label" x="10" y="${top + 4}">${max}</text><text class="axis-label" x="18" y="${height - bottom + 4}">0</text><polyline class="trend-line" points="${points}" />${dots}${labels}</svg>`;
 }
 
 function showView(view) {
@@ -97,6 +140,7 @@ function render(run) {
   text("#rate-value", currency.required ? `${currency.rate.base}/${currency.rate.quote} ${currency.rate.rate}` : "Not required");
   text("#rate-date", currency.required ? currency.rate.date : "Not required");
   text("#frankfurter-status", currency.required ? "Connected" : "Not Required");
+  renderWeeklyChart(run.weekly_activity || { available: false });
   text("#decision", manager.final_decision);
   text("#decision-rationale", manager.decision_rationale);
   text("#next-step", manager.required_next_step);
@@ -121,6 +165,7 @@ function render(run) {
 document.querySelector("#dashboard-nav").addEventListener("click", (event) => { event.preventDefault(); showView("dashboard"); });
 document.querySelector("#users-nav").addEventListener("click", (event) => { event.preventDefault(); showView("users"); });
 document.querySelector("#reports-nav").addEventListener("click", (event) => { event.preventDefault(); showView("reports"); });
+select.addEventListener("change", () => loadWeeklyChart(select.value));
 
 runButton.addEventListener("click", async () => {
   runButton.disabled = true;
