@@ -1,0 +1,14 @@
+{
+  "name": "marlow-finch-ai-engagement-center",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "verify:data": "node backend/src/cli/verify-data.js",
+    "run:researcher": "node --env-file-if-exists=.env backend/src/cli/run-researcher.js",
+    "run:designer": "node --env-file-if-exists=.env backend/src/cli/run-designer.js",
+    "run:maker": "node --env-file-if-exists=.env backend/src/cli/run-maker.js",
+    "run:marketer": "node --env-file-if-exists=.env backend/src/cli/run-marketer.js",
+    "run:manager": "node --env-file-if-exists=.env backend/src/cli/run-manager.js",
+    "start": "node --env-file-if-exists=.env backend/src/server.js"
+  }
+}
