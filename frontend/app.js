@@ -80,7 +80,7 @@ runButton.addEventListener("click", async () => {
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Workflow failed");
     render(result);
-    setStatus(`Five-agent review complete. Manager decision: ${result.manager_output.final_decision}. Dry-run only; no communication was sent.`);
+    setStatus(`Five-agent review complete. Manager decision: ${result.manager_output.final_decision}. Recommendation preview generated; no external action was triggered.`);
   } catch (error) { setStatus(error.message, true); }
   runButton.disabled = false;
 });
