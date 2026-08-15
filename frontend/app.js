@@ -67,6 +67,7 @@ function render(run) {
   text("#message-cta", message.cta);
   text("#run-id", `Run ${run.run_id}`);
   text("#run-date", new Date(run.completed_at).toLocaleString());
+  ["researcher", "designer", "maker", "marketer", "manager"].forEach((agent) => text(`#agent-${agent}`, "Completed"));
   dashboard.classList.remove("hidden");
 }
 
