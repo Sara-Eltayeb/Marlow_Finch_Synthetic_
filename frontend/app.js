@@ -5,7 +5,10 @@ const status = document.querySelector("#status");
 const dashboard = document.querySelector("#dashboard");
 
 function setStatus(message, error = false) { status.textContent = message; status.style.color = error ? "#a34d43" : ""; }
-function text(id, value) { document.querySelector(id).textContent = value ?? ""; }
+function text(id, value) {
+  const element = document.querySelector(id);
+  if (element) element.textContent = value ?? "";
+}
 
 async function loadUsers() {
   try {
