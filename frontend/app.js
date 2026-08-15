@@ -3,6 +3,9 @@ const select = document.querySelector("#user-select");
 const runButton = document.querySelector("#run-button");
 const status = document.querySelector("#status");
 const dashboard = document.querySelector("#dashboard");
+const usersPanel = document.querySelector("#users-panel");
+const reportsPanel = document.querySelector("#reports-panel");
+let lastRun = null;
 
 function setStatus(message, error = false) { status.textContent = message; status.style.color = error ? "#a34d43" : ""; }
 function text(id, value) {
@@ -15,7 +18,10 @@ async function loadUsers() {
     const response = await fetch(`${apiBase}/api/users`);
     if (!response.ok) throw new Error("Backend unavailable");
     const result = await response.json();
-    select.innerHTML = result.users.map((user) => `<option value="${user.User_ID}">${user.User_ID} · ${user.Goal_Type} · ${user.Goal_Status}</option>`).join("");
+    select.innerHTML = result.users.map((user) => `<option value="${user.User_ID}">${user.User_ID} · ${user.Goal_Type} · ${user.Goal_Status} · ${user.Preferred_Channel}</option>`).join("");
+    document.querySelector("#user-count").textContent = `${result.users.length} synthetic users`;
+    document.querySelector("#user-list").innerHTML = result.users.map((user) => `<tr><td><strong>${user.User_ID}</strong></td><td>${user.Goal_Type}</td><td><span class="table-status">${user.Goal_Status}</span></td><td>${user.Preferred_Channel}</td><td><button class="table-select" data-user="${user.User_ID}">Review →</button></td></tr>`).join("");
+    document.querySelectorAll(".table-select").forEach((button) => button.addEventListener("click", () => { select.value = button.dataset.user; showView("dashboard"); runButton.focus(); }));
     runButton.disabled = false;
     setStatus("Select a customer to run the five-agent review.");
   } catch {
@@ -24,7 +30,17 @@ async function loadUsers() {
   }
 }
 
+function showView(view) {
+  dashboard.classList.toggle("hidden", view !== "dashboard" || !lastRun);
+  usersPanel.classList.toggle("hidden", view !== "users");
+  reportsPanel.classList.toggle("hidden", view !== "reports");
+  document.querySelectorAll("nav a").forEach((link) => link.classList.remove("nav-active"));
+  document.querySelector(`#${view}-nav`)?.classList.add("nav-active");
+  if (view === "reports" && !lastRun) setStatus("Run a review first to generate a report.");
+}
+
 function render(run) {
+  lastRun = run;
   const user = run.input.selected.user;
   const research = run.researcher_output;
   const strategy = run.designer_output;
@@ -68,8 +84,18 @@ function render(run) {
   text("#run-id", `Run ${run.run_id}`);
   text("#run-date", new Date(run.completed_at).toLocaleString());
   ["researcher", "designer", "maker", "marketer", "manager"].forEach((agent) => text(`#agent-${agent}`, "Completed"));
+  text("#report-decision", manager.final_decision);
+  text("#report-user", user.User_ID);
+  text("#report-rationale", manager.decision_rationale);
+  text("#report-run", run.run_id);
+  document.querySelector("#report-empty").classList.add("hidden");
+  document.querySelector("#report-content").classList.remove("hidden");
   dashboard.classList.remove("hidden");
 }
+
+document.querySelector("#dashboard-nav").addEventListener("click", (event) => { event.preventDefault(); showView("dashboard"); });
+document.querySelector("#users-nav").addEventListener("click", (event) => { event.preventDefault(); showView("users"); });
+document.querySelector("#reports-nav").addEventListener("click", (event) => { event.preventDefault(); showView("reports"); });
 
 runButton.addEventListener("click", async () => {
   runButton.disabled = true;
