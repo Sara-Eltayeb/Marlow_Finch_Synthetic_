@@ -33,6 +33,8 @@ Return only valid JSON matching this shape:
   "dry_run_only": true
 }
 
+Every item in quality_checks, evidence_used, and blocking_issues must be one plain text string. Do not return objects, nested arrays, or key/value pairs in those arrays.
+
 Do not invent consent, contact history, active goals, suppression windows, or policy thresholds. If a blank field is treated as unknown by Researcher, keep it unknown.`;
 
 const decisions = new Set(["SEND", "DELAY", "SUPPRESS", "REVISION_REQUIRED", "INSUFFICIENT_DATA"]);
@@ -49,8 +51,28 @@ export async function runManager({ researchBrief, strategy, interventionPlan, co
     geminiApiKey,
     model,
   });
-  validateReview(review);
-  return review;
+  const normalizedReview = normalizeReview(review);
+  validateReview(normalizedReview);
+  return normalizedReview;
+}
+
+function normalizeReview(review) {
+  const normalized = { ...review };
+  for (const key of ["quality_checks", "evidence_used", "blocking_issues"]) {
+    const value = normalized[key];
+    if (typeof value === "string") {
+      normalized[key] = [value];
+    } else if (Array.isArray(value)) {
+      normalized[key] = value.map((item) => {
+        if (typeof item === "string") return item;
+        if (item && typeof item === "object") return Object.entries(item).map(([name, result]) => `${name}: ${result}`).join("; ");
+        return String(item);
+      });
+    } else if (value == null) {
+      normalized[key] = [];
+    }
+  }
+  return normalized;
 }
 
 function validateReview(review) {

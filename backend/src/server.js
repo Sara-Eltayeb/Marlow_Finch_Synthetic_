@@ -66,7 +66,7 @@ const server = createServer(async (request, response) => {
     if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, model });
     if (request.method === "GET" && url.pathname === "/api/users") {
       const result = await fetchUsers({ dataUrl });
-      return send(response, 200, { source: result.source, users: result.users.map(({ User_ID, Goal_Type, Goal_Status, Preferred_Channel }) => ({ User_ID, Goal_Type, Goal_Status, Preferred_Channel })) });
+      return send(response, 200, { source: result.source, users: result.users.map(({ User_ID, Goal_Type, Goal_Status, Preferred_Channel, ["Goal_Progress_%"]: Goal_Progress }) => ({ User_ID, Goal_Type, Goal_Status, Preferred_Channel, "Goal_Progress_%": Goal_Progress })) });
     }
     if (request.method === "GET" && url.pathname === "/api/weekly") {
       const userId = url.searchParams.get("userId");
@@ -76,6 +76,13 @@ const server = createServer(async (request, response) => {
       } catch (error) {
         return send(response, 200, { available: false, error: error.message, selectedUserId: userId, rows: [] });
       }
+    }
+    if (request.method === "GET" && url.pathname === "/api/context") {
+      const userId = url.searchParams.get("userId");
+      if (!userId) return send(response, 400, { error: "userId is required" });
+      const selected = await fetchSelectedUser({ dataUrl, userId });
+      const currency = await fetchRelevantCurrency({ user: selected.user, rateUrl });
+      return send(response, 200, { selected, currency });
     }
     if (request.method === "POST" && url.pathname === "/api/run") {
       const chunks = [];

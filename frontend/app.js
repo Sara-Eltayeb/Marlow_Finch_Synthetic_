@@ -7,6 +7,7 @@ const usersPanel = document.querySelector("#users-panel");
 const reportsPanel = document.querySelector("#reports-panel");
 let lastRun = null;
 let weeklyRequest = 0;
+let contextRequest = 0;
 
 function setStatus(message, error = false) { status.textContent = message; status.style.color = error ? "#a34d43" : ""; }
 function text(id, value) {
@@ -19,21 +20,94 @@ async function loadUsers() {
     const response = await fetch(`${apiBase}/api/users`);
     if (!response.ok) throw new Error("Backend unavailable");
     const result = await response.json();
-    select.innerHTML = result.users.map((user) => `<option value="${user.User_ID}">${user.User_ID} · ${user.Goal_Type} · ${user.Goal_Status} · ${user.Preferred_Channel}</option>`).join("");
+    select.innerHTML = result.users.map((user) => `<option value="${user.User_ID}">${user.User_ID} — ${user.Goal_Type} — ${formatProgress(user["Goal_Progress_%"])} complete</option>`).join("");
     document.querySelector("#user-count").textContent = `${result.users.length} synthetic users`;
     document.querySelector("#user-list").innerHTML = result.users.map((user) => `<tr><td><strong>${user.User_ID}</strong></td><td>${user.Goal_Type}</td><td><span class="table-status">${user.Goal_Status}</span></td><td>${user.Preferred_Channel}</td><td><button class="table-select" data-user="${user.User_ID}">Review →</button></td></tr>`).join("");
-    document.querySelectorAll(".table-select").forEach((button) => button.addEventListener("click", () => { select.value = button.dataset.user; loadWeeklyChart(select.value); showView("dashboard"); runButton.focus(); }));
+    document.querySelectorAll(".table-select").forEach((button) => button.addEventListener("click", () => { select.value = button.dataset.user; loadSelectedUser(select.value); showView("dashboard"); runButton.focus(); }));
     runButton.disabled = false;
     text("#live-status", "Live Data Connected");
     document.querySelector("#live-dot")?.classList.remove("connection-failed");
-    setStatus("Select a customer to run the five-agent review.");
-    loadWeeklyChart(select.value);
+    setStatus("Select a customer to generate an engagement recommendation.");
+    await loadSelectedUser(select.value);
+    showView("dashboard");
   } catch {
     select.innerHTML = "<option>Backend not connected</option>";
     text("#live-status", "Live Data Unavailable");
     document.querySelector("#live-dot")?.classList.add("connection-failed");
     setStatus("Backend not connected. Start the backend locally or open this page with ?api=YOUR_BACKEND_URL.", true);
   }
+}
+
+function formatProgress(value) {
+  const progress = Number.parseFloat(String(value).replace("%", ""));
+  return Number.isFinite(progress) ? `${Number.isInteger(progress) ? progress : progress.toFixed(2).replace(/0+$/, "").replace(/\.$/, "")}%` : "Progress unavailable";
+}
+
+async function loadSelectedUser(userId) {
+  const requestId = ++contextRequest;
+  const weeklyPromise = loadWeeklyChart(userId);
+  try {
+    const response = await fetch(`${apiBase}/api/context?userId=${encodeURIComponent(userId)}`);
+    if (!response.ok) throw new Error("Unable to load selected user");
+    const context = await response.json();
+    if (requestId !== contextRequest) return;
+    renderSelectedUser(context.selected, context.currency);
+    await weeklyPromise;
+  } catch (error) {
+    if (requestId === contextRequest) setStatus(error.message, true);
+  }
+}
+
+function renderSelectedUser(selected, currency) {
+  const user = selected.user;
+  const percent = Number.parseFloat(user["Goal_Progress_%"]) || 0;
+  const lastActivity = user.Last_Activity_Date ? new Date(user.Last_Activity_Date).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "Not recorded";
+  text("#header-date", new Date(user.Observation_Date).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }));
+  text("#profile-id", user.User_ID);
+  text("#profile-badge", user.Goal_Status === "Completed" ? "Goal Completed" : user.Goal_Status);
+  text("#member-since", `${user.Weeks_Since_Signup} weeks`);
+  text("#profile-region", user.Region_Currency);
+  text("#profile-channel", user.Preferred_Channel);
+  text("#profile-activity", `${lastActivity} (${user.Days_Since_Last_Activity} days ago)`);
+  text("#profile-nudge", user.Last_Nudge_Date || "Not recorded");
+  text("#goal-name", user.Goal_Type);
+  text("#goal-target", `${user.Goal_Target} ${user.Goal_Currency}`);
+  text("#goal-amount", `${user.Goal_Current_Value} ${user.Goal_Currency} / ${user.Goal_Target} ${user.Goal_Currency}`);
+  text("#goal-currency", user.Goal_Currency);
+  document.querySelector("#goal-progress").style.width = `${Math.min(percent, 100)}%`;
+  text("#goal-status", user.Goal_Status);
+  text("#trend-title", "Weekly activity history");
+  text("#trend-caption", `${user.Logins_Last_30_Days} logins in 30 days versus a previous weekly average of ${user.Previous_Weekly_Login_Avg}. This is evidence of reduced activity, not a diagnosis of intent.`);
+  text("#sheets-status", "Connected");
+  text("#sheets-rows", selected.source.rowsRetrieved);
+  text("#sheets-user", user.User_ID);
+  text("#sheets-refresh", new Date(selected.source.fetchedAt).toLocaleString());
+  text("#rate-value", currency.required ? `${currency.rate.base}/${currency.rate.quote} ${currency.rate.rate}` : "Not required");
+  text("#regional-equivalent", currency.required && currency.regional_equivalent !== null ? `${currency.regional_equivalent.toFixed(2)} ${currency.regional_currency}` : "Not required");
+  text("#rate-date", currency.required ? currency.rate.date : "Not required");
+  text("#frankfurter-status", currency.required ? "Connected" : "Not Required");
+  text("#currency-context", currency.required ? `${currency.context}. Context only; exchange rates fluctuate.` : "No conversion is needed because goal and regional currencies match.");
+  lastRun = null;
+  ["engagement-pattern", "recommended-action", "recommendation-reason", "recommended-channel", "recommended-time", "decision", "decision-rationale", "next-step", "message-channel", "message-headline", "message-body", "message-cta"].forEach((id) => text(`#${id}`, "--"));
+  setTrailPending();
+  document.querySelector("#message-cta").disabled = true;
+  document.querySelector("#report-empty").classList.remove("hidden");
+  document.querySelector("#report-content").classList.add("hidden");
+}
+
+function setTrailPending() {
+  const pending = {
+    researcher: "Awaits a completed review.",
+    designer: "Awaits evidence from Researcher.",
+    maker: "Awaits an approved strategy.",
+    marketer: "Awaits an intervention plan.",
+    manager: "Awaits the completed recommendation.",
+  };
+  Object.entries(pending).forEach(([agent, summary]) => {
+    text(`#summary-${agent}`, summary);
+    text(`#detail-${agent}`, "No analysis has been generated for this user yet.");
+    text(`#agent-${agent}`, "Pending");
+  });
 }
 
 async function loadWeeklyChart(userId) {
@@ -78,7 +152,7 @@ function renderWeeklyChart(history) {
 }
 
 function showView(view) {
-  dashboard.classList.toggle("hidden", view !== "dashboard" || !lastRun);
+  dashboard.classList.toggle("hidden", view !== "dashboard");
   usersPanel.classList.toggle("hidden", view !== "users");
   reportsPanel.classList.toggle("hidden", view !== "reports");
   document.querySelectorAll("nav a").forEach((link) => link.classList.remove("nav-active"));
@@ -91,6 +165,7 @@ function render(run) {
   const user = run.input.selected.user;
   const research = run.researcher_output;
   const strategy = run.designer_output;
+  const maker = run.maker_output;
   const currency = run.input.currency;
   const manager = run.manager_output;
   const message = run.marketer_output;
@@ -120,7 +195,7 @@ function render(run) {
   text("#profile-channel", user.Preferred_Channel);
   text("#profile-activity", `${lastActivity} (${user.Days_Since_Last_Activity} days ago)`);
   text("#profile-nudge", user.Last_Nudge_Date || "Not recorded");
-  text("#trend-title", "Weekly history unavailable");
+  text("#trend-title", run.weekly_activity?.available ? "Weekly activity history" : "Weekly history unavailable");
   text("#trend-caption", `${user.Logins_Last_30_Days} logins in 30 days versus a previous weekly average of ${user.Previous_Weekly_Login_Avg}. This is evidence of reduced activity, not a diagnosis of intent.`);
   text("#engagement-pattern", formatStrategyType);
   text("#recommended-action", actionLabels[strategy.strategy_type] || formatStrategyType);
@@ -138,8 +213,10 @@ function render(run) {
   text("#sheets-user", user.User_ID);
   text("#sheets-refresh", new Date(sheetSource.fetchedAt).toLocaleString());
   text("#rate-value", currency.required ? `${currency.rate.base}/${currency.rate.quote} ${currency.rate.rate}` : "Not required");
+  text("#regional-equivalent", currency.required && currency.regional_equivalent !== null ? `${currency.regional_equivalent.toFixed(2)} ${currency.regional_currency}` : "Not required");
   text("#rate-date", currency.required ? currency.rate.date : "Not required");
   text("#frankfurter-status", currency.required ? "Connected" : "Not Required");
+  text("#currency-context", currency.required ? `${currency.context}. Context only; exchange rates fluctuate.` : "No conversion is needed because goal and regional currencies match.");
   renderWeeklyChart(run.weekly_activity || { available: false });
   text("#decision", manager.final_decision);
   text("#decision-rationale", manager.decision_rationale);
@@ -153,6 +230,16 @@ function render(run) {
   text("#run-id", `Run ${run.run_id}`);
   text("#run-date", new Date(run.completed_at).toLocaleString());
   ["researcher", "designer", "maker", "marketer", "manager"].forEach((agent) => text(`#agent-${agent}`, "Completed"));
+  text("#summary-researcher", research.summary);
+  text("#summary-designer", strategy.overview);
+  text("#summary-maker", maker.recommended_action);
+  text("#summary-marketer", message.headline);
+  text("#summary-manager", `${manager.final_decision}: ${manager.required_next_step}`);
+  text("#detail-researcher", research.evidence?.[0] || research.summary);
+  text("#detail-designer", strategy.why_this_follows_the_evidence?.[0] || strategy.overview);
+  text("#detail-maker", maker.timing);
+  text("#detail-marketer", message.message);
+  text("#detail-manager", manager.decision_rationale);
   text("#report-decision", manager.final_decision);
   text("#report-user", user.User_ID);
   text("#report-rationale", manager.decision_rationale);
@@ -165,7 +252,7 @@ function render(run) {
 document.querySelector("#dashboard-nav").addEventListener("click", (event) => { event.preventDefault(); showView("dashboard"); });
 document.querySelector("#users-nav").addEventListener("click", (event) => { event.preventDefault(); showView("users"); });
 document.querySelector("#reports-nav").addEventListener("click", (event) => { event.preventDefault(); showView("reports"); });
-select.addEventListener("change", () => loadWeeklyChart(select.value));
+select.addEventListener("change", () => loadSelectedUser(select.value));
 
 runButton.addEventListener("click", async () => {
   runButton.disabled = true;

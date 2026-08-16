@@ -75,9 +75,24 @@ export async function fetchRelevantCurrency({ user, rateUrl }) {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`Frankfurter request failed: ${response.status}`);
 
+  const rate = await response.json();
+  const goalAmount = Number(user.Goal_Target);
+  const regionalEquivalent = Number.isFinite(goalAmount)
+    ? convertAmount(goalAmount, goalCurrency, regionCurrency, rate)
+    : null;
+
   return {
     required: true,
     source: { type: "frankfurter", url, fetchedAt: new Date().toISOString() },
-    rate: await response.json(),
+    rate,
+    context: regionalEquivalent === null ? "Regional equivalent unavailable" : `Goal target is approximately ${regionalEquivalent.toFixed(2)} ${regionCurrency} at the retrieved reference rate`,
+    regional_equivalent: regionalEquivalent,
+    regional_currency: regionCurrency,
   };
+}
+
+function convertAmount(amount, from, to, rate) {
+  if (from === rate.base && to === rate.quote) return amount * rate.rate;
+  if (from === rate.quote && to === rate.base) return amount / rate.rate;
+  return null;
 }
